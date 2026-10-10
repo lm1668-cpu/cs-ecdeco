@@ -1,0 +1,11 @@
+{
+  "name": "cs-ecdeco",
+  "version": "0.1.0",
+  "private": true,
+  "description": "迪高售後服務手機網頁 App（MVP 靜態 SPA）",
+  "scripts": {
+    "dev": "python3 -m http.server 5173 --bind 127.0.0.1",
+    "start": "python3 -m http.server 5173 --bind 127.0.0.1",
+    "preview": "python3 -m http.server 8080 --bind 127.0.0.1"
+  }
+}
