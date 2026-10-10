@@ -4,13 +4,65 @@
  *   #/login
  *   #/projects
  *   #/project/:id
+ *   #/warranty/:projectId/:scopeId
  *   #/supplier/:projectId/:supplierId
  *   #/contact?project=:id
  *   #/about
  */
 (function () {
-  const DATA = window.ECDECO_DATA;
+  const STORAGE_OVERRIDE_KEY = "ecdeco_cs_data_override";
   const SESSION_KEY = "ecdeco_cs_session";
+
+  /** 合併 data.js 預設與 admin localStorage 覆寫 */
+  function loadData() {
+    const base = window.ECDECO_DATA || {};
+    try {
+      const raw = localStorage.getItem(STORAGE_OVERRIDE_KEY);
+      if (!raw) return base;
+      const override = JSON.parse(raw);
+      if (!override || typeof override !== "object") return base;
+      return {
+        ...base,
+        ...override,
+        contact: { ...base.contact, ...(override.contact || {}) },
+        about: { ...base.about, ...(override.about || {}) },
+        customers: override.customers || base.customers,
+        projects: override.projects || base.projects,
+        warrantyDetails: {
+          ...(base.warrantyDetails || {}),
+          ...(override.warrantyDetails || {}),
+        },
+        supplierCatalog: override.supplierCatalog || base.supplierCatalog,
+        demoOtp: override.demoOtp || base.demoOtp,
+      };
+    } catch {
+      return base;
+    }
+  }
+
+  let DATA = loadData();
+
+  const TITLE_TO_DETAIL = [
+    { re: /泥水/, key: "masonry" },
+    { re: /油漆/, key: "painting" },
+    { re: /木工|訂造|傢俬|間隔|櫃/, key: "carpentry" },
+    { re: /水電/, key: "mep" },
+    { re: /電氣|電工/, key: "electrical" },
+  ];
+
+  function resolveWarrantyDetail(scope) {
+    if (!scope) return DATA.warrantyDetails.other;
+    if (scope.detailKey && DATA.warrantyDetails[scope.detailKey]) {
+      return DATA.warrantyDetails[scope.detailKey];
+    }
+    const title = scope.title || "";
+    for (const row of TITLE_TO_DETAIL) {
+      if (row.re.test(title) && DATA.warrantyDetails[row.key]) {
+        return DATA.warrantyDetails[row.key];
+      }
+    }
+    return DATA.warrantyDetails.other;
+  }
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const appEl = $("#app");
@@ -80,18 +132,6 @@
     return `${y}年${Number(m)}月${Number(d)}日`;
   }
 
-  function iconSvg(name) {
-    const icons = {
-      projects:
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v16"/></svg>',
-      contact:
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h2a2 2 0 0 1 2 1.7c.1.9.3 1.7.6 2.5a2 2 0 0 1-.5 2.1L7.1 9.4a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2.1-.5c.8.3 1.6.5 2.5.6a2 2 0 0 1 1.7 2z"/></svg>',
-      about:
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></svg>',
-    };
-    return icons[name] || "";
-  }
-
   function setChrome({ title, showNav, showLogout, authOnly }) {
     headerEl.classList.toggle("hidden", authOnly);
     navEl.classList.toggle("hidden", !showNav);
@@ -101,7 +141,12 @@
       $("#btn-logout").classList.toggle("hidden", !showLogout);
     }
     if (showNav) {
-      const active = title === "關於迪高" ? "about" : title === "聯絡迪高" ? "contact" : "projects";
+      const active =
+        title === "關於迪高"
+          ? "about"
+          : title === "聯絡迪高"
+            ? "contact"
+            : "projects";
       navEl.querySelectorAll("a").forEach((a) => {
         a.classList.toggle("active", a.dataset.nav === active);
       });
@@ -114,7 +159,7 @@
     setChrome({ authOnly: true, showNav: false });
     mainEl.innerHTML = `
       <div class="welcome">
-        <img class="welcome-logo" src="assets/logo.png" alt="迪高室內設計" width="148" height="148">
+        <img class="logo-welcome welcome-logo" src="assets/logo.png" alt="迪高室內設計" width="252" height="252">
         <h1 class="welcome-tag">你嘅項目 · 售後服務</h1>
         <div class="gold-line" aria-hidden="true"></div>
         <p class="welcome-sub">已合作客人專用入口</p>
@@ -152,7 +197,8 @@
       }
       const customer = DATA.customers[phone];
       if (!customer) {
-        $("#login-error").textContent = "呢個號碼未有登記項目。如有疑問請聯絡迪高。";
+        $("#login-error").textContent =
+          "呢個號碼未有登記項目。如有疑問請聯絡迪高。";
         return;
       }
       renderOtpStep(customer);
@@ -163,7 +209,7 @@
     setChrome({ authOnly: true, showNav: false });
     mainEl.innerHTML = `
       <div class="welcome">
-        <img class="welcome-logo" src="assets/logo.png" alt="迪高室內設計" width="148" height="148">
+        <img class="logo-welcome welcome-logo" src="assets/logo.png" alt="迪高室內設計" width="252" height="252">
         <h1 class="welcome-tag">輸入驗證碼</h1>
         <div class="gold-line" aria-hidden="true"></div>
         <p class="welcome-sub">已傳送至 +852 ${escapeHtml(customer.phone)}（示範）</p>
@@ -278,15 +324,19 @@
         <span class="dot" aria-hidden="true"></span>
         <h2>有售後／保養嘅範圍</h2>
       </div>
+      <p class="field-hint" style="margin:-4px 0 12px">撳範圍名稱可睇詳細說明。</p>
       <div class="scope-list">
         ${p.warrantyScopes
           .map(
             (w) => `
-          <article class="scope-item">
-            <h3>${escapeHtml(w.title)}</h3>
+          <button type="button" class="scope-item scope-item-tap" data-scope="${escapeHtml(w.id)}">
+            <div class="scope-item-head">
+              <h3>${escapeHtml(w.title)}</h3>
+              <span class="chevron" aria-hidden="true">›</span>
+            </div>
             <p class="period">保養期：${escapeHtml(w.period)}</p>
             <p class="note">${escapeHtml(w.note)}</p>
-          </article>`
+          </button>`
           )
           .join("")}
       </div>
@@ -316,10 +366,85 @@
     $("#btn-back").addEventListener("click", () => {
       location.hash = "#/projects";
     });
+    mainEl.querySelectorAll("[data-scope]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        location.hash = `#/warranty/${encodeURIComponent(p.id)}/${encodeURIComponent(btn.dataset.scope)}`;
+      });
+    });
     mainEl.querySelectorAll("[data-supplier]").forEach((btn) => {
       btn.addEventListener("click", () => {
         location.hash = `#/supplier/${encodeURIComponent(p.id)}/${encodeURIComponent(btn.dataset.supplier)}`;
       });
+    });
+  }
+
+  function renderWarrantyDetail(projectId, scopeId) {
+    const session = requireAuth();
+    if (!session) return;
+    if (!session.projectIds.includes(projectId)) {
+      location.hash = "#/projects";
+      return;
+    }
+    const p = DATA.projects[projectId];
+    const scope = p && p.warrantyScopes.find((x) => x.id === scopeId);
+    if (!scope) {
+      location.hash = `#/project/${projectId}`;
+      return;
+    }
+    const detail = resolveWarrantyDetail(scope);
+    setChrome({ title: "保養說明", showNav: true, showLogout: true });
+
+    const coveredHtml = (detail.covered || [])
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+    const exclusionsHtml = (detail.exclusions || [])
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+
+    mainEl.innerHTML = `
+      <button type="button" class="back-link" id="btn-back">‹ 返回項目</button>
+      <div class="card warranty-detail-card">
+        <span class="badge badge-done">迪高保養範圍</span>
+        <h1 class="serif" style="font-size:1.3rem;margin:12px 0 6px">${escapeHtml(scope.title)}</h1>
+        <p class="period" style="margin:0 0 12px">保養期：${escapeHtml(scope.period)}</p>
+        <p class="warranty-summary">${escapeHtml(detail.summary)}</p>
+      </div>
+
+      <div class="block-title">
+        <span class="dot" aria-hidden="true"></span>
+        <h2>一般涵蓋</h2>
+      </div>
+      <div class="card">
+        <ul class="detail-list">${coveredHtml}</ul>
+      </div>
+
+      <div class="block-title">
+        <span class="dot warn" aria-hidden="true"></span>
+        <h2>常見不包括</h2>
+      </div>
+      <div class="card">
+        <ul class="detail-list">${exclusionsHtml}</ul>
+      </div>
+
+      <div class="block-title">
+        <span class="dot" aria-hidden="true"></span>
+        <h2>如何報修</h2>
+      </div>
+      <div class="card">
+        <p class="note" style="margin:0">${escapeHtml(detail.howToReport)}</p>
+      </div>
+
+      <div class="placeholder-note" style="margin-top:14px">
+        ${escapeHtml(detail.contractNote)}
+      </div>
+
+      <div class="btn-row" style="margin-top:16px">
+        <a class="btn btn-cta" href="#/contact?project=${encodeURIComponent(p.id)}">聯絡迪高查售後／報修</a>
+      </div>
+    `;
+
+    $("#btn-back").addEventListener("click", () => {
+      location.hash = `#/project/${encodeURIComponent(projectId)}`;
     });
   }
 
@@ -369,7 +494,6 @@
   }
 
   function buildWhatsAppUrl(projectName) {
-    // PLACEHOLDER: Kelvin 必須把 DATA.contact.whatsapp 換成真實迪高號碼（唔好用大本營 6179 1102）
     const num = DATA.contact.whatsapp;
     const text = `${projectName || "我的項目"} —— 我想查售後／報修`;
     return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
@@ -382,7 +506,11 @@
 
     let projectName = "我的項目";
     let projectId = query.project || "";
-    if (projectId && session.projectIds.includes(projectId) && DATA.projects[projectId]) {
+    if (
+      projectId &&
+      session.projectIds.includes(projectId) &&
+      DATA.projects[projectId]
+    ) {
       projectName = DATA.projects[projectId].name;
     } else if (session.projectIds.length === 1) {
       projectId = session.projectIds[0];
@@ -401,7 +529,9 @@
     const c = DATA.contact;
     const waUrl = buildWhatsAppUrl(projectName);
     const telHref = `tel:${c.phoneTel}`;
-    const mailSubject = encodeURIComponent(`${projectName} —— 我想查售後／報修`);
+    const mailSubject = encodeURIComponent(
+      `${projectName} —— 我想查售後／報修`
+    );
     const mailBody = encodeURIComponent(
       `你好，我想查售後／報修。\n\n項目：${projectName}\n聯絡人：${session.name}\n電話：+852 ${session.phone}\n\n（請補充問題描述）`
     );
@@ -425,19 +555,14 @@
           <a class="btn btn-mail" href="${escapeHtml(mailHref)}">電郵 ${escapeHtml(c.email)}</a>
         </div>
       </div>
-      <div class="placeholder-note">
-        <strong>Kelvin 請注意：</strong> WhatsApp／電話現為 placeholder（852XXXXXXXX）。
-        上線前必須填入真實<strong>迪高</strong>對外聯絡號碼。
-        <em>切勿使用大本營 6179 1102。</em>
-        請改 <code>js/data.js</code> 內 <code>contact</code> 欄位。
-      </div>
     `;
 
     const select = $("#contact-project");
     const btnWa = $("#btn-wa");
     function refreshWa() {
       const id = select.value;
-      const name = (DATA.projects[id] && DATA.projects[id].name) || "我的項目";
+      const name =
+        (DATA.projects[id] && DATA.projects[id].name) || "我的項目";
       btnWa.href = buildWhatsAppUrl(name);
     }
     select.addEventListener("change", refreshWa);
@@ -452,16 +577,22 @@
       authOnly: false,
     });
     if (!session) {
-      // allow about only when logged in for MVP consistency; redirect
       location.hash = "#/login";
       return;
     }
     const a = DATA.about;
+    const paras = (a.paragraphs || [a.oneLiner])
+      .map((p) => `<p>${escapeHtml(p)}</p>`)
+      .join("");
     mainEl.innerHTML = `
       <div class="card about-card">
-        <img class="logo" src="assets/logo.png" alt="迪高室內設計" width="120" height="120">
+        <img class="logo-about" src="assets/logo.png" alt="迪高室內設計" width="240" height="240">
         <div class="gold-line"></div>
-        <p>${escapeHtml(a.oneLiner)}</p>
+        <h2 class="about-headline serif">${escapeHtml(a.headline || "關於迪高")}</h2>
+        <div class="about-body">
+          ${paras}
+          ${a.invite ? `<p>${escapeHtml(a.invite)}</p>` : ""}
+        </div>
         <a class="btn btn-outline" href="${escapeHtml(a.website)}" target="_blank" rel="noopener noreferrer">前往官網 ecdeco.com.hk</a>
       </div>
     `;
@@ -470,6 +601,7 @@
   /* ---------- Router ---------- */
 
   function route() {
+    DATA = loadData();
     const { parts, query } = parseHash();
     const page = parts[0] || "login";
 
@@ -486,6 +618,9 @@
         break;
       case "project":
         renderProjectDetail(parts[1]);
+        break;
+      case "warranty":
+        renderWarrantyDetail(parts[1], parts[2]);
         break;
       case "supplier":
         renderSupplier(parts[1], parts[2]);

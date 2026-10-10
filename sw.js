@@ -1,5 +1,5 @@
 /* 基本 offline cache（靜態資產）；正式上線可再調策略 */
-const CACHE = "ecdeco-cs-v1";
+const CACHE = "ecdeco-cs-v2";
 const ASSETS = [
   "./",
   "./index.html",
