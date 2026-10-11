@@ -1,0 +1,139 @@
+# 迪高售後報修 — 用 GITHUB_TOKEN 建立 Issue（唔經前端 PAT）
+#
+# 觸發：
+#   1) workflow_dispatch — 手動／文件測試
+#   2) repository_dispatch type=cs-ecdeco-report — 仍需 relay（客戶端唔好帶 secret）
+#
+# 正式建議：部署 functions/create-report.js，Secrets 只放喺 Cloudflare／Netlify。
+
+name: Create support report issue
+
+on:
+  workflow_dispatch:
+    inputs:
+      guest:
+        description: Guest name
+        required: false
+        default: ""
+      phone:
+        description: Phone
+        required: false
+        default: ""
+      project:
+        description: Project name
+        required: true
+      time:
+        description: Report time label
+        required: false
+        default: ""
+      problem:
+        description: Problem description
+        required: true
+      attachments_json:
+        description: JSON array of attachment filenames
+        required: false
+        default: "[]"
+      photo_count:
+        description: Photo count
+        required: false
+        default: "0"
+      video_count:
+        description: Video count
+        required: false
+        default: "0"
+      media_note:
+        description: Note about media
+        required: false
+        default: "媒體檔案未上載至 GitHub Issue；請經電郵附件補傳，或稍後另行傳送相片／短片。"
+
+  repository_dispatch:
+    types: [cs-ecdeco-report]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Issue from report payload
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isDispatch = !!context.payload.client_payload;
+            const p = isDispatch ? (context.payload.client_payload || {}) : {};
+            const inputs = context.payload.inputs || {};
+
+            const guest = String(p.guest ?? inputs.guest ?? "").trim() || "—";
+            const phone = String(p.phone ?? inputs.phone ?? "").trim() || "—";
+            const project = String(p.project ?? p.projectName ?? inputs.project ?? "").trim() || "未指定項目";
+            const time = String(p.time ?? p.whenLabel ?? inputs.time ?? "").trim() || new Date().toISOString();
+            const problem = String(p.problem ?? inputs.problem ?? "").trim();
+            if (!problem) {
+              core.setFailed("problem is required");
+              return;
+            }
+
+            let attachments = p.attachments || p.fileNames || [];
+            if (typeof inputs.attachments_json === "string") {
+              try { attachments = JSON.parse(inputs.attachments_json); } catch { attachments = []; }
+            }
+            if (!Array.isArray(attachments)) attachments = [];
+
+            const photoCount = Number(p.photoCount ?? inputs.photo_count ?? 0) || 0;
+            const videoCount = Number(p.videoCount ?? inputs.video_count ?? 0) || 0;
+            const mediaNote = String(
+              p.mediaNote ?? inputs.media_note ??
+              "媒體檔案未上載至 GitHub Issue；請經電郵附件補傳，或稍後另行傳送相片／短片。"
+            );
+
+            const esc = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
+            const short = problem.replace(/\s+/g, " ").slice(0, 40);
+            const title = `【售後報修】${project}${short ? ` — ${short}${problem.length > 40 ? "…" : ""}` : ""}`;
+
+            const countParts = [];
+            if (photoCount) countParts.push(`相片 ${photoCount} 張`);
+            if (videoCount) countParts.push(`短片 ${videoCount} 段`);
+            if (!countParts.length && attachments.length) countParts.push(`共 ${attachments.length} 個檔案`);
+            const countLine = countParts.length ? countParts.join("／") : "無";
+            const attachLines = attachments.length
+              ? attachments.map((n) => `- \`${String(n).replace(/`/g, "")}\``).join("\n")
+              : "_無檔名記錄_";
+
+            const body = [
+              "## 迪高售後報修",
+              "",
+              "| 欄位 | 內容 |",
+              "|------|------|",
+              `| 客人 | ${esc(guest)} |`,
+              `| 電話 | ${esc(phone)} |`,
+              `| 項目 | ${esc(project)} |`,
+              `| 時間 | ${esc(time)} |`,
+              "",
+              "### 問題描述",
+              "",
+              problem,
+              "",
+              "### 附件",
+              "",
+              `**統計：** ${countLine}`,
+              "",
+              attachLines,
+              "",
+              `> **媒體說明：** ${mediaNote}`,
+              "",
+              "---",
+              "_由 GitHub Actions（report.yml）自動建立_",
+            ].join("\n");
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+            });
+
+            core.info(`Created #${issue.data.number}: ${issue.data.html_url}`);
+            core.setOutput("issue_url", issue.data.html_url);
+            core.setOutput("issue_number", String(issue.data.number));

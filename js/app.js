@@ -6,7 +6,7 @@
  *   #/project/:id
  *   #/warranty/:projectId/:scopeId
  *   #/supplier/:projectId/:supplierId
- *   #/contact?project=:id
+ *   #/contact?project=:id  (報修表單 → GitHub Issue API + 電郵通知；WhatsApp 可選)
  *   #/about
  */
 (function () {
@@ -493,16 +493,207 @@
     });
   }
 
-  function buildWhatsAppUrl(projectName) {
-    const num = DATA.contact.whatsapp;
-    const text = `${projectName || "我的項目"} —— 我想查售後／報修`;
+  const REPORTS_KEY = "ecdeco_cs_problem_reports";
+  const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+  const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
+
+  /** In-memory file picks for current contact form (not persisted as blobs). */
+  let reportFiles = [];
+
+  function getReportConfig() {
+    const cfg = window.ECDECO_REPORT_CONFIG || {};
+    return {
+      REPORT_API_URL: (cfg.REPORT_API_URL || "").trim(),
+      NOTIFY_EMAIL:
+        (cfg.NOTIFY_EMAIL || "").trim() ||
+        (DATA.contact && DATA.contact.email) ||
+        "info@ecdeco.com.hk",
+      OPEN_WHATSAPP: cfg.OPEN_WHATSAPP === true,
+      WHATSAPP:
+        (cfg.WHATSAPP || "").trim() ||
+        (DATA.contact && DATA.contact.whatsapp) ||
+        "85268262764",
+      GITHUB_OWNER: cfg.GITHUB_OWNER || "lm1668-cpu",
+      GITHUB_REPO: cfg.GITHUB_REPO || "cs-ecdeco",
+    };
+  }
+
+  function buildWhatsAppUrl(text, whatsappNum) {
+    const num =
+      whatsappNum ||
+      (DATA.contact && DATA.contact.whatsapp) ||
+      "85268262764";
     return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+  }
+
+  function buildMailtoUrl(to, subject, body) {
+    return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  function formatReportDateTime(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function loadReports() {
+    try {
+      const raw = localStorage.getItem(REPORTS_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveReportMeta(report) {
+    const list = loadReports();
+    list.unshift(report);
+    localStorage.setItem(REPORTS_KEY, JSON.stringify(list.slice(0, 100)));
+  }
+
+  function countMedia(files) {
+    let photos = 0;
+    let videos = 0;
+    files.forEach((f) => {
+      if (f.type.startsWith("video/")) videos += 1;
+      else if (f.type.startsWith("image/")) photos += 1;
+    });
+    return { photos, videos };
+  }
+
+  function buildReportMessage({
+    name,
+    phone,
+    projectName,
+    when,
+    problem,
+    photos,
+    videos,
+    shareNote,
+    issueUrl,
+  }) {
+    const attachParts = [];
+    if (photos) attachParts.push(`相片 ${photos}張`);
+    if (videos) attachParts.push(`短片 ${videos}段`);
+    const attachLine = attachParts.length
+      ? `附件：${attachParts.join("／")}（${shareNote}）`
+      : "附件：無";
+    const lines = [
+      "【迪高售後報修】",
+      `客人：${name || "—"}`,
+      `電話：${phone || "—"}`,
+      `項目：${projectName || "—"}`,
+      `時間：${when}`,
+      `問題：${problem}`,
+      attachLine,
+    ];
+    if (issueUrl) {
+      lines.push(`GitHub Issue：${issueUrl}`);
+    }
+    return lines.join("\n");
+  }
+
+  async function createReportIssue(apiUrl, payload) {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok || !data || !data.ok || !data.issue_url) {
+      const msg =
+        (data && data.error) || `報修 API 失敗（HTTP ${res.status}）`;
+      const err = new Error(msg);
+      err.api = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function downloadTextSummary(filename, text) {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function tryShareReport(files, text) {
+    if (!navigator.share) return { shared: false, reason: "unsupported" };
+    try {
+      const payload = { title: "迪高售後報修", text };
+      if (files.length && navigator.canShare) {
+        const withFiles = { ...payload, files };
+        if (navigator.canShare(withFiles)) {
+          await navigator.share(withFiles);
+          return { shared: true, withFiles: true };
+        }
+      }
+      await navigator.share(payload);
+      return { shared: true, withFiles: false };
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        return { shared: false, reason: "abort" };
+      }
+      return { shared: false, reason: "error" };
+    }
+  }
+
+  function revokePreviewUrls() {
+    reportFiles.forEach((entry) => {
+      if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+    });
+  }
+
+  function renderMediaPreviews(container) {
+    if (!container) return;
+    if (!reportFiles.length) {
+      container.innerHTML = "";
+      container.classList.add("hidden");
+      return;
+    }
+    container.classList.remove("hidden");
+    container.innerHTML = reportFiles
+      .map((entry, idx) => {
+        const isVideo = entry.file.type.startsWith("video/");
+        const sizeMb = (entry.file.size / (1024 * 1024)).toFixed(1);
+        const media = isVideo
+          ? `<video src="${entry.previewUrl}" muted playsinline controls></video>`
+          : `<img src="${entry.previewUrl}" alt="">`;
+        return `
+          <div class="media-preview-item" data-idx="${idx}">
+            ${media}
+            <div class="media-preview-meta">
+              <span>${escapeHtml(entry.file.name)}</span>
+              <span>${sizeMb} MB · ${isVideo ? "短片" : "相片"}</span>
+            </div>
+            <button type="button" class="media-preview-remove" data-remove="${idx}" aria-label="移除">×</button>
+          </div>`;
+      })
+      .join("");
+    container.querySelectorAll("[data-remove]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.dataset.remove);
+        const removed = reportFiles.splice(i, 1)[0];
+        if (removed && removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+        renderMediaPreviews(container);
+      });
+    });
   }
 
   function renderContact(query) {
     const session = requireAuth();
     if (!session) return;
     setChrome({ title: "聯絡迪高", showNav: true, showLogout: true });
+
+    revokePreviewUrls();
+    reportFiles = [];
 
     let projectName = "我的項目";
     let projectId = query.project || "";
@@ -527,7 +718,8 @@
       .join("");
 
     const c = DATA.contact;
-    const waUrl = buildWhatsAppUrl(projectName);
+    const quickWaText = `${projectName || "我的項目"} —— 我想查售後／報修`;
+    const waUrl = buildWhatsAppUrl(quickWaText);
     const telHref = `tel:${c.phoneTel}`;
     const mailSubject = encodeURIComponent(
       `${projectName} —— 我想查售後／報修`
@@ -541,14 +733,36 @@
       <div class="section-head">
         <p class="kicker">售後服務</p>
         <h1>聯絡迪高</h1>
-        <p>一鍵 WhatsApp／電話／電郵；預填項目名稱同「我想查售後／報修」。</p>
+        <p>填寫問題描述、可選上傳相片／短片。提交後會嘗試建立 GitHub Issue，並開啟電郵預填報修摘要（預設 info@ecdeco.com.hk）。</p>
       </div>
+
+      <div class="card report-card">
+        <h2 class="card-title">報修／問題回報</h2>
+        <form id="problem-report-form" novalidate>
+          <label class="field-label" for="contact-project">相關項目</label>
+          <select id="contact-project" class="field-select" name="projectId">
+            ${projectOptions || '<option value="">我的項目</option>'}
+          </select>
+
+          <label class="field-label" for="report-problem">問題描述 <span class="req">*</span></label>
+          <textarea id="report-problem" name="problem" class="field-textarea" rows="5" required placeholder="請描述問題位置、現象、發現時間等"></textarea>
+          <p class="error-msg" id="report-error" role="alert"></p>
+
+          <label class="field-label" for="report-files">相片／短片（可選）</label>
+          <input id="report-files" type="file" accept="image/*,video/*" multiple class="field-file">
+          <p class="field-hint">相片建議每張 &lt;10MB；短片建議每段 &lt;50MB。媒體唔會上載到 GitHub；提交後請用電郵附件補傳，或稍後另行傳送。系統分享（如有）可作後備。</p>
+          <div id="report-previews" class="media-previews hidden" aria-live="polite"></div>
+
+          <div class="btn-row">
+            <button type="submit" class="btn btn-cta" id="btn-submit-report">提交報修</button>
+          </div>
+        </form>
+        <div id="report-result" class="report-result hidden" role="status"></div>
+      </div>
+
       <div class="card">
-        <label class="field-label" for="contact-project">相關項目</label>
-        <select id="contact-project" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--bg);margin-bottom:8px">
-          ${projectOptions || "<option>我的項目</option>"}
-        </select>
-        <p class="field-hint">訊息會預填：「項目名稱 —— 我想查售後／報修」</p>
+        <h2 class="card-title">其他聯絡方式</h2>
+        <p class="field-hint" style="margin-top:0">快速開啟 WhatsApp／電話／電郵（預填項目名稱）。</p>
         <div class="btn-row">
           <a class="btn btn-wa" id="btn-wa" href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer">WhatsApp 聯絡</a>
           <a class="btn btn-tel" href="${escapeHtml(telHref)}">致電 ${escapeHtml(c.phone)}</a>
@@ -559,13 +773,247 @@
 
     const select = $("#contact-project");
     const btnWa = $("#btn-wa");
-    function refreshWa() {
+    const fileInput = $("#report-files");
+    const previewsEl = $("#report-previews");
+    const form = $("#problem-report-form");
+    const errorEl = $("#report-error");
+    const resultEl = $("#report-result");
+
+    function currentProjectName() {
       const id = select.value;
-      const name =
-        (DATA.projects[id] && DATA.projects[id].name) || "我的項目";
-      btnWa.href = buildWhatsAppUrl(name);
+      return (DATA.projects[id] && DATA.projects[id].name) || "我的項目";
     }
-    select.addEventListener("change", refreshWa);
+
+    function refreshQuickLinks() {
+      const name = currentProjectName();
+      btnWa.href = buildWhatsAppUrl(`${name} —— 我想查售後／報修`);
+    }
+    select.addEventListener("change", refreshQuickLinks);
+
+    fileInput.addEventListener("change", () => {
+      errorEl.textContent = "";
+      const picked = Array.from(fileInput.files || []);
+      fileInput.value = "";
+      picked.forEach((file) => {
+        const isVideo = file.type.startsWith("video/");
+        const isImage = file.type.startsWith("image/");
+        if (!isVideo && !isImage) return;
+        const max = isVideo ? VIDEO_MAX_BYTES : PHOTO_MAX_BYTES;
+        if (file.size > max) {
+          errorEl.textContent = isVideo
+            ? `「${file.name}」超過 50MB，請壓縮後再試。`
+            : `「${file.name}」超過 10MB，請壓縮後再試。`;
+          return;
+        }
+        reportFiles.push({
+          file,
+          previewUrl: URL.createObjectURL(file),
+        });
+      });
+      renderMediaPreviews(previewsEl);
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.textContent = "";
+      const problem = ($("#report-problem").value || "").trim();
+      if (!problem) {
+        errorEl.textContent = "請填寫問題描述。";
+        $("#report-problem").focus();
+        return;
+      }
+
+      const reportCfg = getReportConfig();
+      const now = new Date();
+      const when = formatReportDateTime(now);
+      const projId = select.value || "";
+      const projName = currentProjectName();
+      const files = reportFiles.map((x) => x.file);
+      const { photos, videos } = countMedia(files);
+      const phoneDisplay = session.phone ? `+852 ${session.phone}` : "—";
+      const fileNames = files.map((f) => f.name);
+      const notifyEmail = reportCfg.NOTIFY_EMAIL;
+
+      const submitBtn = $("#btn-submit-report");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "提交中…";
+      }
+
+      let issueUrl = "";
+      let issueNumber = null;
+      let apiError = "";
+      let effectiveNotifyEmail = notifyEmail;
+
+      if (reportCfg.REPORT_API_URL) {
+        try {
+          const apiResult = await createReportIssue(reportCfg.REPORT_API_URL, {
+            guest: session.name || "",
+            phone: phoneDisplay,
+            project: projName,
+            projectId: projId,
+            time: when,
+            problem,
+            attachments: fileNames,
+            fileNames,
+            photoCount: photos,
+            videoCount: videos,
+            mediaNote:
+              "媒體檔案未上載至 GitHub Issue；請經電郵附件補傳，或稍後另行傳送相片／短片。",
+          });
+          issueUrl = apiResult.issue_url || "";
+          issueNumber = apiResult.issue_number || null;
+          if (apiResult.notify_email) {
+            effectiveNotifyEmail = String(apiResult.notify_email).trim() || effectiveNotifyEmail;
+          }
+        } catch (err) {
+          apiError = (err && err.message) || "無法建立 GitHub Issue";
+        }
+      }
+
+      const reportMeta = {
+        id: `rpt-${Date.now().toString(36)}`,
+        createdAt: now.toISOString(),
+        whenLabel: when,
+        customerName: session.name || "",
+        phone: session.phone || "",
+        projectId: projId,
+        projectName: projName,
+        problem,
+        photoCount: photos,
+        videoCount: videos,
+        fileNames,
+        issueUrl: issueUrl || "",
+        issueNumber,
+        apiError: apiError || "",
+      };
+      saveReportMeta(reportMeta);
+
+      let shareNote = files.length
+        ? "請經電郵附件補傳或稍後另行傳送"
+        : "無附件";
+      const draftMessage = buildReportMessage({
+        name: session.name || "—",
+        phone: phoneDisplay,
+        projectName: projName,
+        when,
+        problem,
+        photos,
+        videos,
+        shareNote,
+        issueUrl: issueUrl || "",
+      });
+
+      // Primary notify: email (Kelvin 11/10). Open in same gesture turn.
+      const mailSubject = `【迪高售後報修】${projName}${
+        issueNumber ? ` #${issueNumber}` : ""
+      }`;
+      const mailHrefPrimary = buildMailtoUrl(
+        effectiveNotifyEmail,
+        mailSubject,
+        draftMessage
+      );
+      const mailWin = window.open(mailHrefPrimary, "_blank");
+
+      let waWin = null;
+      if (reportCfg.OPEN_WHATSAPP) {
+        waWin = window.open(
+          buildWhatsAppUrl(draftMessage, reportCfg.WHATSAPP),
+          "_blank",
+          "noopener,noreferrer"
+        );
+      }
+
+      const shareResult = await tryShareReport(files, draftMessage);
+      if (shareResult.shared && shareResult.withFiles) {
+        shareNote = "已用系統分享送出（含附件）";
+      } else if (shareResult.shared) {
+        shareNote = "已用系統分享送出文字；請經電郵補傳附件";
+      }
+
+      const finalMessage = buildReportMessage({
+        name: session.name || "—",
+        phone: phoneDisplay,
+        projectName: projName,
+        when,
+        problem,
+        photos,
+        videos,
+        shareNote,
+        issueUrl: issueUrl || "",
+      });
+
+      try {
+        const list = loadReports();
+        if (list[0] && list[0].id === reportMeta.id) {
+          list[0].shareNote = shareNote;
+          list[0].message = finalMessage;
+          list[0].issueUrl = issueUrl || "";
+          list[0].issueNumber = issueNumber;
+          localStorage.setItem(REPORTS_KEY, JSON.stringify(list));
+        }
+      } catch {
+        /* ignore */
+      }
+
+      const mailHref = buildMailtoUrl(effectiveNotifyEmail, mailSubject, finalMessage);
+      const waHref = buildWhatsAppUrl(finalMessage, reportCfg.WHATSAPP);
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+
+      const issueLine = issueUrl
+        ? `已建立 GitHub Issue：<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issueUrl)}</a>。`
+        : reportCfg.REPORT_API_URL
+          ? `未能建立 GitHub Issue${apiError ? `（${escapeHtml(apiError)}）` : ""}；仍已儲存本機記錄並預填電郵。`
+          : "未設定報修 API（REPORT_API_URL 空白），未建立 GitHub Issue；已儲存本機記錄。";
+
+      const mailPopupHint = mailWin
+        ? ""
+        : "（如未自動開啟郵件程式，請撳下面「開啟電郵通知」。）";
+      const attachHint = files.length
+        ? "請喺電郵加上所選相片／短片作附件（或稍後另行傳送）。"
+        : "";
+      const waExtra = reportCfg.OPEN_WHATSAPP
+        ? waWin
+          ? " 已額外開啟 WhatsApp 預填訊息。"
+          : " （WhatsApp 未自動開啟，可撳下面按鈕。）"
+        : "";
+
+      const waBtnHtml = reportCfg.OPEN_WHATSAPP
+        ? `<a class="btn btn-wa" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer" id="btn-wa-report">開啟 WhatsApp</a>`
+        : "";
+
+      resultEl.classList.remove("hidden");
+      resultEl.innerHTML = `
+        <p class="report-result-title">報修已提交</p>
+        <p>${issueLine}</p>
+        <p>已盡量開啟電郵至 <strong>${escapeHtml(effectiveNotifyEmail)}</strong>（預填摘要）${mailPopupHint}${attachHint}${waExtra}</p>
+        <div class="btn-row">
+          <a class="btn btn-mail" href="${escapeHtml(mailHref)}" id="btn-mail-report">開啟電郵通知</a>
+          ${waBtnHtml}
+          <button type="button" class="btn btn-outline" id="btn-dl-summary">下載文字摘要</button>
+          ${
+            issueUrl
+              ? `<a class="btn btn-outline" href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer">查看 Issue</a>`
+              : ""
+          }
+        </div>
+      `;
+      $("#btn-dl-summary", resultEl).addEventListener("click", () => {
+        downloadTextSummary(`迪高售後報修-${stamp}.txt`, finalMessage);
+      });
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "提交報修";
+      }
+
+      form.reset();
+      revokePreviewUrls();
+      reportFiles = [];
+      renderMediaPreviews(previewsEl);
+      if (projId) select.value = projId;
+      refreshQuickLinks();
+    });
   }
 
   function renderAbout() {

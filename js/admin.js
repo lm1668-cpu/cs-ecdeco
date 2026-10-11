@@ -8,6 +8,7 @@
   const PIN = "246810";
   const AUTH_KEY = "ecdeco_cs_admin_auth";
   const OVERRIDE_KEY = "ecdeco_cs_data_override";
+  const REPORTS_KEY = "ecdeco_cs_problem_reports";
   const DETAIL_KEYS = [
     { value: "masonry", label: "泥水" },
     { value: "painting", label: "油漆" },
@@ -180,6 +181,7 @@
         <button type="button" class="admin-tab ${view.tab === "projects" ? "active" : ""}" data-tab="projects">項目</button>
         <button type="button" class="admin-tab ${view.tab === "suppliers" ? "active" : ""}" data-tab="suppliers">供應商清單</button>
         <button type="button" class="admin-tab ${view.tab === "customers" ? "active" : ""}" data-tab="customers">客人手機</button>
+        <button type="button" class="admin-tab ${view.tab === "reports" ? "active" : ""}" data-tab="reports">報修記錄</button>
         <button type="button" class="admin-tab ${view.tab === "data" ? "active" : ""}" data-tab="data">匯出／匯入</button>
       </div>
       <div id="admin-panel"></div>
@@ -194,6 +196,7 @@
     if (view.tab === "projects") renderProjectsPanel(panel);
     else if (view.tab === "suppliers") renderSuppliersPanel(panel);
     else if (view.tab === "customers") renderCustomersPanel(panel);
+    else if (view.tab === "reports") renderReportsPanel(panel);
     else renderDataPanel(panel);
   }
 
@@ -653,6 +656,63 @@
       harvest();
       saveStore();
       paint();
+    });
+  }
+
+  function loadReports() {
+    try {
+      const raw = localStorage.getItem(REPORTS_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function renderReportsPanel(panel) {
+    const reports = loadReports();
+    panel.innerHTML = `
+      <div class="admin-toolbar">
+        <button type="button" class="btn btn-outline" id="btn-refresh-reports">重新整理</button>
+        <button type="button" class="btn-danger" id="btn-clear-reports">清除全部報修記錄</button>
+      </div>
+      <p class="admin-hint">客人端「聯絡迪高」提交嘅報修會存喺本機 localStorage（key：${escapeHtml(REPORTS_KEY)}）。MVP 唔存相片／短片內容，只存檔名同數量；附件靠 WhatsApp／系統分享。</p>
+      <div class="admin-grid" id="report-list"></div>
+    `;
+    const list = $("#report-list", panel);
+    if (!reports.length) {
+      list.innerHTML = `<div class="empty"><p>未有報修記錄。</p></div>`;
+    } else {
+      list.innerHTML = reports
+        .map((r) => {
+          const attach = [];
+          if (r.photoCount) attach.push(`相片 ${r.photoCount}張`);
+          if (r.videoCount) attach.push(`短片 ${r.videoCount}段`);
+          const attachLabel = attach.length ? attach.join("／") : "無附件";
+          const files = (r.fileNames || []).join("、") || "—";
+          const msg = r.message
+            ? `<pre class="admin-report-msg">${escapeHtml(r.message)}</pre>`
+            : `<p class="admin-meta">${escapeHtml(r.problem || "")}</p>`;
+          return `
+          <article class="admin-card">
+            <h3>${escapeHtml(r.whenLabel || r.createdAt || "—")}</h3>
+            <p class="admin-meta">客人：${escapeHtml(r.customerName || "—")} · 電話：${escapeHtml(r.phone || "—")}<br>
+            項目：${escapeHtml(r.projectName || "—")}<br>
+            附件：${escapeHtml(attachLabel)} · 檔名：${escapeHtml(files)}</p>
+            ${msg}
+          </article>`;
+        })
+        .join("");
+    }
+    $("#btn-refresh-reports", panel).addEventListener("click", () => {
+      view.tab = "reports";
+      renderApp();
+    });
+    $("#btn-clear-reports", panel).addEventListener("click", () => {
+      if (!confirm("清除全部本機報修記錄？")) return;
+      localStorage.removeItem(REPORTS_KEY);
+      toast("已清除報修記錄");
+      renderApp();
     });
   }
 
