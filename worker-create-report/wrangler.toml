@@ -1,0 +1,9 @@
+name = "cs-ecdeco-create-report"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+ALLOW_ORIGIN = "https://cs.ecdeco.com.hk"
+NOTIFY_EMAIL = "info@ecdeco.com.hk"
+GITHUB_OWNER = "lm1668-cpu"
+GITHUB_REPO = "cs-ecdeco"

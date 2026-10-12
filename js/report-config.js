@@ -11,7 +11,7 @@
  */
 window.ECDECO_REPORT_CONFIG = {
   /** 例：https://cs-ecdeco-report.YOUR_SUBDOMAIN.workers.dev 或 /.netlify/functions/create-report */
-  REPORT_API_URL: "",
+  REPORT_API_URL: "https://cs-ecdeco-create-report.lm1668-f03.workers.dev/create-report",
 
   /** Issue 目標 repo（供文件／後端預設；前端唔用嚟直接 call GitHub） */
   GITHUB_OWNER: "lm1668-cpu",

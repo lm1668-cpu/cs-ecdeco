@@ -3,3 +3,7 @@ node_modules/
 *.log
 .env
 .env.*
+
+worker-create-report/node_modules/
+worker-create-report/.wrangler/
+worker-create-report/.dev.vars
