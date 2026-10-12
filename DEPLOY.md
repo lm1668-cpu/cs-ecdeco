@@ -89,6 +89,7 @@ manifest.webmanifest
 sw.js
 css/styles.css
 js/data.js
+js/report-config.js
 js/app.js
 assets/logo.png
 icons/icon-192.png
@@ -109,5 +110,17 @@ icons/apple-touch-icon.png
 
 ---
 
-**文件版本：** 2026-10-10  
+## Service Worker／快取（上線後更新內容）
+
+App 用 `sw.js` 做離線快取。**HTML／JS／CSS 已改為 network-first**（優先拉新版；斷線先用 cache），圖示／manifest 仍 cache-first。
+
+每次有意義嘅內容或前端變更部署後：
+
+1. 將 `sw.js` 入面 `CACHE` 版本號 +1（而家係 `ecdeco-cs-v3`）
+2. 如有新增靜態檔，同步更新 `ASSETS` 列表
+3. Commit／push（或上傳）後，客人再開 App 會裝新 SW；見到「有新版本，撳更新」即可 reload
+
+唔 bump `CACHE` 嘅話，舊 cache 名可能殘留、activate 清唔晒舊檔；建議每次正式 deploy 都 bump。
+
+**文件版本：** 2026-10-12  
 **狀態：** 只作部署指引；未執行任何 DNS／Hosting 變更  

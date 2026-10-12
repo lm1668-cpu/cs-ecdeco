@@ -54,8 +54,38 @@
   <script src="js/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
+      function showSwUpdateBanner() {
+        if (document.getElementById("sw-update-banner")) return;
+        var bar = document.createElement("div");
+        bar.id = "sw-update-banner";
+        bar.className = "sw-update-banner";
+        bar.setAttribute("role", "status");
+        bar.innerHTML =
+          '<span class="sw-update-text">有新版本，撳更新</span>' +
+          '<button type="button" class="btn btn-cta sw-update-btn" id="sw-update-btn">更新</button>';
+        document.body.appendChild(bar);
+        document.getElementById("sw-update-btn").addEventListener("click", function () {
+          location.reload();
+        });
+      }
+
       window.addEventListener("load", function () {
-        navigator.serviceWorker.register("sw.js").catch(function () {});
+        navigator.serviceWorker.register("sw.js").then(function (reg) {
+          if (reg.waiting) showSwUpdateBanner();
+          reg.addEventListener("updatefound", function () {
+            var worker = reg.installing;
+            if (!worker) return;
+            worker.addEventListener("statechange", function () {
+              if (worker.state === "installed" && navigator.serviceWorker.controller) {
+                showSwUpdateBanner();
+              }
+            });
+          });
+        }).catch(function () {});
+      });
+
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        showSwUpdateBanner();
       });
     }
   </script>

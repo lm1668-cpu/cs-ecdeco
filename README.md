@@ -38,6 +38,8 @@ python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
 > 建議用手機闊度（Chrome DevTools device mode）預覽；亦可「加入主畫面」測試基本 PWA meta／manifest。
+>
+> 內容更新後請 bump `sw.js` 嘅 `CACHE`（而家 `ecdeco-cs-v3`）；HTML／JS／CSS 用 network-first，客人會見到「有新版本，撳更新」。詳見 `DEPLOY.md`。
 
 ---
 

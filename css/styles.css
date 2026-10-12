@@ -1059,3 +1059,35 @@ h3,
     content: "：";
   }
 }
+
+/* PWA 新版本提示 */
+.sw-update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 6px 20px rgba(58, 36, 30, 0.18);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.sw-update-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sw-update-btn {
+  width: auto;
+  flex-shrink: 0;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+}
