@@ -8,7 +8,7 @@
 - **語言：** 繁體中文（香港）
 - **狀態：** MVP 預覽（示範登入＋本地 JSON／JS 資料＋本機 Admin）
 
-> **Kelvin 請先 review 本機改動，確認後先 push 上 GitHub。請勿在未批准前 git push。**
+> **DNS／Hosting 須 Kelvin 批准先改；本頁價目已按 12/10 確認上線。**
 
 ---
 
@@ -146,9 +146,10 @@ OPEN_WHATSAPP: false,
 3. **項目詳情** — 基本資料、有保養範圍（可撳入詳情）、非保養範圍（連供應商）
 4. **保養說明** — 涵蓋／常見不包括／如何報修／合約為準＋聯絡迪高 CTA
 5. **供應商聯絡** — 品牌／型號、電話／電郵／網址、標籤「非迪高保養範圍」
-6. **聯絡迪高** — **報修表單**（問題描述必填、可選相片／短片預覽、相關項目預填）→ 可選 `POST` serverless 開 GitHub Issue → **電郵通知**（預設 info@ecdeco.com.hk；WhatsApp 預設關）；存 localStorage 供 Admin 睇；下載文字摘要／Web Share 後備；另保留 WhatsApp／電話／電郵快捷
-7. **關於** — 專用較大 logo（`.logo-about`）、定位文案＋連結 [ecdeco.com.hk](https://ecdeco.com.hk)（唔硬銷、唔提大本營）
-8. **Admin** — 見上文
+6. **聯絡迪高** — **報修表單**（問題描述必填、可選相片／短片預覽、相關項目預填）→ 可選 `POST` serverless 開 GitHub Issue → **電郵通知**（預設 info@ecdeco.com.hk；WhatsApp 預設關）；存 localStorage 供 Admin 睇；下載文字摘要／Web Share 後備；另保留 WhatsApp／電話／電郵快捷；頁頂提示保養以外可睇維修價目
+7. **維修價目**（`#/repairs-pricing`，別名 `#/services`）— **家居維修（保養以外）**收費表（A–F：上門檢查、水電、油漆、木工五金、冷氣檢查、附加費）＋最低消費 **HK$1,800**／次（Kelvin 12/10）＋聲明；保養內請用售後報修；CTA 連到聯絡表單
+8. **關於** — 專用較大 logo（`.logo-about`）、定位文案＋連結維修價目／[ecdeco.com.hk](https://ecdeco.com.hk)（唔硬銷、唔提大本營）
+9. **Admin** — 見上文
 
 ---
 
@@ -163,7 +164,7 @@ cs-ecdeco/
 ├── package.json
 ├── css/styles.css
 ├── css/admin.css
-├── js/data.js              # 示範資料＋聯絡＋保養說明
+├── js/data.js              # 示範資料＋聯絡＋保養說明＋維修價目
 ├── js/report-config.js     # 報修 API URL／通知電郵（唔放 secret）
 ├── js/app.js               # 客人端路由（讀 localStorage 覆寫）
 ├── js/admin.js             # 管理端（PIN + localStorage）
@@ -205,10 +206,10 @@ cs-ecdeco/
 
 - 唔硬銷、唔公開註冊、唔導大本營／招聘  
 - 唔擅自改 DNS／Hostinger／正式站  
-- 唔擅自 git push（等 Kelvin review）  
+- 唔擅自改正式 DNS（見 DEPLOY.md）  
 - App 說明以合約為準，唔取代法律文件  
 
 ---
 
-**版本：** MVP 0.4（2026-10-11 報修 → GitHub Issue + 電郵通知；WhatsApp 可選）  
+**版本：** MVP 0.5（2026-10-12 家居維修保養以外價目 `#/repairs-pricing`；最低消費 $1,800）  
 **負責人：** 迪高客戶及售後服務部  

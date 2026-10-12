@@ -7,6 +7,7 @@
  *   #/warranty/:projectId/:scopeId
  *   #/supplier/:projectId/:supplierId
  *   #/contact?project=:id  (報修表單 → GitHub Issue API + 電郵通知；WhatsApp 可選)
+ *   #/repairs-pricing      (家居維修保養以外價目)
  *   #/about
  */
 (function () {
@@ -26,6 +27,7 @@
         ...override,
         contact: { ...base.contact, ...(override.contact || {}) },
         about: { ...base.about, ...(override.about || {}) },
+        repairsPricing: override.repairsPricing || base.repairsPricing,
         customers: override.customers || base.customers,
         projects: override.projects || base.projects,
         warrantyDetails: {
@@ -146,7 +148,9 @@
           ? "about"
           : title === "聯絡迪高"
             ? "contact"
-            : "projects";
+            : title === "維修價目"
+              ? "repairs"
+              : "projects";
       navEl.querySelectorAll("a").forEach((a) => {
         a.classList.toggle("active", a.dataset.nav === active);
       });
@@ -736,6 +740,10 @@
         <p>填寫問題描述、可選上傳相片／短片。提交後會嘗試建立 GitHub Issue，並開啟電郵預填報修摘要（預設 info@ecdeco.com.hk）。</p>
       </div>
 
+      <div class="card price-callout price-callout-compact">
+        <p>保養期內報修請用本頁表單；若屬<strong>保養以外</strong>收費維修，可先睇 <a href="#/repairs-pricing">維修價目</a>。</p>
+      </div>
+
       <div class="card report-card">
         <h2 class="card-title">報修／問題回報</h2>
         <form id="problem-report-form" novalidate>
@@ -1016,6 +1024,91 @@
     });
   }
 
+
+  function renderPriceTable(section) {
+    const cols = section.columns || [];
+    const priceIdx = cols.findIndex((c) => /參考價|價/.test(c));
+    const itemIdx = 0;
+    const rowsHtml = (section.rows || [])
+      .map((row) => {
+        const item = escapeHtml(row[itemIdx] || "");
+        const price =
+          priceIdx >= 0
+            ? escapeHtml(row[priceIdx] || "")
+            : escapeHtml(row[1] || "");
+        const extras = row
+          .map((cell, i) => ({ cell, i }))
+          .filter(({ i }) => i !== itemIdx && i !== priceIdx)
+          .filter(({ cell }) => cell && cell !== "—")
+          .map(({ cell, i }) => {
+            const label = cols[i] ? escapeHtml(cols[i]) : "";
+            return `<div class="price-extra"><span class="price-extra-label">${label}</span><span>${escapeHtml(cell)}</span></div>`;
+          })
+          .join("");
+        return `<li class="price-row">
+          <div class="price-row-main">
+            <span class="price-item">${item}</span>
+            <span class="price-amount">${price}</span>
+          </div>
+          ${extras ? `<div class="price-row-meta">${extras}</div>` : ""}
+        </li>`;
+      })
+      .join("");
+    const note = section.note
+      ? `<p class="price-section-note">${escapeHtml(section.note)}</p>`
+      : "";
+    return `
+      <section class="card price-section" id="price-${escapeHtml(section.id)}">
+        <h2 class="card-title">${escapeHtml(section.title)}</h2>
+        ${note}
+        <ul class="price-list" role="list">${rowsHtml}</ul>
+      </section>`;
+  }
+
+  function renderRepairsPricing() {
+    const session = requireAuth();
+    if (!session) return;
+    setChrome({ title: "維修價目", showNav: true, showLogout: true });
+
+    const rp = DATA.repairsPricing || {};
+    const notices = (rp.notices || [])
+      .map((n) => `<li>${escapeHtml(n)}</li>`)
+      .join("");
+    const sections = (rp.sections || []).map(renderPriceTable).join("");
+
+    mainEl.innerHTML = `
+      <div class="section-head">
+        <p class="kicker">收費維修</p>
+        <h1>${escapeHtml(rp.title || "家居維修服務（保養以外）")}</h1>
+        <p>${escapeHtml(rp.subtitle || "")}</p>
+      </div>
+
+      <div class="card price-callout">
+        <p class="price-callout-title">保養 vs 收費維修</p>
+        <p>保養期內、屬合約範圍嘅問題，請用「<a href="#/contact">售後報修</a>」。本頁只適用於<strong>保養以外／非合約保養</strong>嘅上門收費服務。</p>
+      </div>
+
+      <div class="card price-min-charge" role="note">
+        <p class="price-min-label">最低消費</p>
+        <p class="price-min-amount">HK$${Number(rp.minChargeAmount || 1800).toLocaleString("en-HK")}</p>
+        <p class="price-min-note">${escapeHtml(rp.minChargeNote || "")}</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">重要聲明</h2>
+        <ol class="detail-list price-notices">${notices}</ol>
+      </div>
+
+      ${sections}
+
+      <div class="card price-cta-card">
+        <h2 class="card-title">預約／查詢</h2>
+        <p class="field-hint" style="margin-top:0">揀好項目後，用「聯絡迪高」報修表單說明地址、問題同希望日子；我們會確認檔期同最終報價後覆你。</p>
+        <a class="btn btn-cta" href="#/contact">前往聯絡／報修表單</a>
+      </div>
+    `;
+  }
+
   function renderAbout() {
     const session = getSession();
     setChrome({
@@ -1041,7 +1134,10 @@
           ${paras}
           ${a.invite ? `<p>${escapeHtml(a.invite)}</p>` : ""}
         </div>
-        <a class="btn btn-outline" href="${escapeHtml(a.website)}" target="_blank" rel="noopener noreferrer">前往官網 ecdeco.com.hk</a>
+        <div class="btn-row about-links">
+          <a class="btn btn-cta" href="#/repairs-pricing">維修價目（保養以外）</a>
+          <a class="btn btn-outline" href="${escapeHtml(a.website)}" target="_blank" rel="noopener noreferrer">前往官網 ecdeco.com.hk</a>
+        </div>
       </div>
     `;
   }
@@ -1075,6 +1171,10 @@
         break;
       case "contact":
         renderContact(query);
+        break;
+      case "repairs-pricing":
+      case "services":
+        renderRepairsPricing();
         break;
       case "about":
         renderAbout();

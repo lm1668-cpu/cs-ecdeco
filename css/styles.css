@@ -143,7 +143,7 @@ h3,
   height: calc(var(--nav-h) + var(--safe-b));
   padding: 0 8px var(--safe-b);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid var(--border);
   backdrop-filter: blur(12px);
@@ -155,11 +155,13 @@ h3,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   font-weight: 500;
-  padding: 8px 4px;
+  padding: 8px 2px;
+  text-align: center;
+  line-height: 1.2;
 }
 
 .bottom-nav a.active {
@@ -893,4 +895,167 @@ h3,
 
 .report-card .field-label {
   margin-top: 4px;
+}
+
+/* Repairs pricing (保養以外) */
+.price-callout {
+  background: rgba(0, 145, 150, 0.08);
+  border-color: rgba(0, 145, 150, 0.28);
+}
+
+.price-callout-compact p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.price-callout-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.price-callout p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.price-min-charge {
+  text-align: center;
+  border-color: rgba(229, 57, 53, 0.25);
+  background: linear-gradient(180deg, rgba(229, 57, 53, 0.06), var(--white));
+}
+
+.price-min-label {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--secondary);
+  text-transform: uppercase;
+}
+
+.price-min-amount {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--cta);
+  font-family: var(--font-serif);
+}
+
+.price-min-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.price-notices {
+  padding-left: 1.2em;
+}
+
+.price-section + .price-section {
+  /* cards already spaced via .card + .card */
+}
+
+.price-section-note {
+  margin: -6px 0 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.price-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.price-row {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.price-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.price-row:last-child {
+  padding-bottom: 0;
+}
+
+.price-row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.price-item {
+  font-weight: 600;
+  font-size: 0.92rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.price-amount {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--secondary);
+  font-size: 0.95rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.price-row-meta {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.price-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.price-extra-label {
+  font-weight: 600;
+  color: rgba(58, 36, 30, 0.45);
+  font-size: 0.72rem;
+}
+
+.price-cta-card .btn-cta {
+  width: 100%;
+  text-align: center;
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.about-links .btn {
+  width: 100%;
+  text-align: center;
+}
+
+/* Optional wider table fallback for larger screens */
+@media (min-width: 480px) {
+  .price-extra {
+    flex-direction: row;
+    gap: 6px;
+  }
+  .price-extra-label::after {
+    content: "：";
+  }
 }
